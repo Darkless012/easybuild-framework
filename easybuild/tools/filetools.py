@@ -40,6 +40,7 @@ Set of file tools.
 """
 import datetime
 import difflib
+import distutils.dir_util
 import fileinput
 import glob
 import hashlib
@@ -51,7 +52,6 @@ import sys
 import tempfile
 import time
 import zlib
-from distutils.dir_util import copy_tree
 from xml.etree import ElementTree
 
 from easybuild.base import fancylogger
@@ -1834,24 +1834,25 @@ def copy_dir(path, target_path, force_in_dry_run=False, dirs_exist_ok=False, **k
             if not dirs_exist_ok and os.path.exists(target_path):
                 raise EasyBuildError("Target location %s to copy %s to already exists", target_path, path)
 
-            # On Python >= 3.8
-            if (sys.version_info[0] == 3 and sys.version_info[1] >= 8) or sys.version_info[0] > 3:
-                # Use the shutil.copytree WITH 'dirs_exist_ok'
+            if sys.version_info >= (3, 8):
+                # on Python >= 3.8, shutil.copytree works fine, thanks to availability of dirs_exist_ok named argument
                 shutil.copytree(path, target_path, dirs_exist_ok=dirs_exist_ok, **kwargs)
 
             elif dirs_exist_ok:
-                preserve_symlinks = False
-                # Get symlinks named argument and use distutils.dir_util.copy_tree instead.
-                if 'symlinks' in kwargs:
-                    preserve_symlinks = kwargs.pop('symlinks', False)
-                # Check if there are other named arguments
-                if len(kwargs) > 0:
-                    raise EasyBuildError("You can't use 'dirs_exist_ok=True' with other named arguments: %s",
-                                         list(kwargs.keys()))
-                copy_tree(path, target_path, preserve_symlinks=preserve_symlinks)
+                # use distutils.dir_util.copy_tree with Python < 3.8 if dirs_exist_ok is enabled
+
+                # first get value for symlinks named argument (if any)
+                preserve_symlinks = kwargs.pop('symlinks', False)
+
+                # check if there are other named arguments (there shouldn't be, only 'symlinks' is supported)
+                if kwargs:
+                    raise EasyBuildError("Unknown named arguments passed to copy_dir with dirs_exist_ok=True: %s",
+                                         ', '.join(sorted(kwargs.keys())))
+
+                distutils.dir_util.copy_tree(path, target_path, preserve_symlinks=preserve_symlinks)
 
             else:
-                # Use shutil.copytree WITHOUT 'dirs_exist_ok'
+                # if dirs_exist_ok is not enabled, just use shutil.copytree
                 shutil.copytree(path, target_path, **kwargs)
 
             _log.info("%s copied to %s", path, target_path)
